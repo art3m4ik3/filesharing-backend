@@ -1,0 +1,624 @@
+openapi: 3.0.0
+info:
+    title: FileSharing API
+    description: API for uploading and managing files.
+    version: 1.0.0
+
+servers:
+    - url: http://localhost:3000/api
+      description: Development server
+    - url: https://your-domain.com/api
+      description: Production server
+
+tags:
+    - name: Files
+      description: Operations with files
+
+components:
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: JWT
+            description: "JWT authorization token obtained during file upload"
+
+    schemas:
+        UploadRequest:
+            type: object
+            properties:
+                file:
+                    type: string
+                    format: binary
+                    description: File to upload
+                filename:
+                    type: string
+                    description: Custom file name
+                password:
+                    type: string
+                    description: Password to protect the file (optional)
+                maxDownloads:
+                    type: integer
+                    description: Maximum number of downloads (0 for unlimited)
+                expiresIn:
+                    type: integer
+                    minimum: 0
+                    example: 24
+                    description: Number of hours before the file becomes unavailable (0 for infinite storage time)
+            required:
+                - file
+            example:
+                filename: document.pdf
+                password: secretpass123
+                maxDownloads: 5
+                expiresIn: 24 # file will be available for 24 hours
+
+        FileMetadata:
+            type: object
+            properties:
+                id:
+                    type: string
+                    description: Unique file identifier
+                originalName:
+                    type: string
+                    description: Original file name
+                customName:
+                    type: string
+                    description: Custom file name
+                mimeType:
+                    type: string
+                    description: File MIME type
+                size:
+                    type: integer
+                    description: File size in bytes
+                hasPassword:
+                    type: boolean
+                    description: Password presence flag
+                maxDownloads:
+                    type: integer
+                    description: Maximum number of downloads (0 means unlimited)
+                downloadsCount:
+                    type: integer
+                    description: Current number of downloads
+                expiresAt:
+                    type: string
+                    format: date-time
+                    description: Date and time when the file becomes unavailable (ISO 8601)
+                isExpired:
+                    type: boolean
+                    description: Expiration status flag
+                createdAt:
+                    type: string
+                    format: date-time
+                    description: Creation date
+                updatedAt:
+                    type: string
+                    format: date-time
+                    description: Last update date
+            example:
+                id: "f7c9a123-4567-8901-a234-5678901bcdef"
+                originalName: "document.pdf"
+                customName: "my-document.pdf"
+                mimeType: "application/pdf"
+                size: 1024567
+                hasPassword: true
+                maxDownloads: 5
+                downloadsCount: 0
+                expiresAt: "2024-02-01T12:00:00Z"
+                isExpired: false
+                createdAt: "2024-01-01T12:00:00Z"
+                updatedAt: "2024-01-01T12:00:00Z"
+
+        UploadResponse:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum: [success]
+                code:
+                    type: integer
+                data:
+                    type: object
+                    properties:
+                        file:
+                            $ref: "#/components/schemas/FileMetadata"
+                        deleteToken:
+                            type: string
+                            description: JWT token for file management
+                        downloadUrl:
+                            type: string
+                            description: URL for downloading the file
+                        deleteUrl:
+                            type: string
+                            description: URL for deleting the file
+            example:
+                status: "success"
+                code: 201
+                data:
+                    file:
+                        id: "f7c9a123-4567-8901-a234-5678901bcdef"
+                        originalName: "document.pdf"
+                        customName: "my-document.pdf"
+                        mimeType: "application/pdf"
+                        size: 1024567
+                        hasPassword: true
+                        maxDownloads: 5
+                        downloadsCount: 0
+                        expiresAt: "2024-02-01T12:00:00Z"
+                        createdAt: "2024-01-01T12:00:00Z"
+                        updatedAt: "2024-01-01T12:00:00Z"
+                    deleteToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    downloadUrl: "/api/files/f7c9a123-4567-8901-a234-5678901bcdef/download"
+                    deleteUrl: "/api/files/f7c9a123-4567-8901-a234-5678901bcdef"
+
+        Error:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum: [error]
+                code:
+                    type: integer
+                    description: HTTP status code
+                message:
+                    type: string
+                    description: Error message
+                errors:
+                    type: array
+                    items:
+                        type: string
+                    description: Additional error details
+            example:
+                status: "error"
+                code: 400
+                message: "Invalid input data"
+                errors:
+                    [
+                        "Filename is required",
+                        "Maximum downloads must be a positive number",
+                    ]
+
+    responses:
+        BadRequest:
+            description: Invalid input
+            content:
+                application/json:
+                    schema:
+                        $ref: "#/components/schemas/Error"
+        ServerError:
+            description: Server error
+            content:
+                application/json:
+                    schema:
+                        $ref: "#/components/schemas/Error"
+        TooManyRequests:
+            description: Too many requests
+            content:
+                application/json:
+                    schema:
+                        $ref: "#/components/schemas/Error"
+
+security:
+    - bearerAuth: []
+
+paths:
+    /files:
+        get:
+            summary: Get file list
+            description: Retrieve a paginated list of all files
+            tags:
+                - Files
+            parameters:
+                - in: query
+                  name: page
+                  schema:
+                      type: integer
+                      minimum: 1
+                      default: 1
+                  description: Page number
+                - in: query
+                  name: limit
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                      default: 10
+                  description: Number of items per page
+            responses:
+                "200":
+                    description: File list retrieved successfully
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                        enum: [success]
+                                    code:
+                                        type: integer
+                                    data:
+                                        type: object
+                                        properties:
+                                            files:
+                                                type: array
+                                                items:
+                                                    $ref: "#/components/schemas/FileMetadata"
+                                            pagination:
+                                                type: object
+                                                properties:
+                                                    total:
+                                                        type: integer
+                                                    pages:
+                                                        type: integer
+                                                    page:
+                                                        type: integer
+                                                    limit:
+                                                        type: integer
+                "429":
+                    $ref: "#/components/responses/TooManyRequests"
+                "500":
+                    $ref: "#/components/responses/ServerError"
+        post:
+            summary: Upload file
+            description: |
+                Upload a file with optional parameters.
+                Upon successful upload, returns a delete_token for file management.
+                - Custom name
+                - Password protection
+                - Maximum downloads (0 or -1 for unlimited)
+                - Lifetime in hours (0 or -1 for infinite)
+            tags:
+                - Files
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            $ref: "#/components/schemas/UploadRequest"
+                        examples:
+                            withExpiration:
+                                summary: Upload with expiration in one day
+                                value:
+                                    file: "@document.pdf"
+                                    filename: "my-document.pdf"
+                                    expiresIn: 24
+                            noExpiration:
+                                summary: Upload without expiration
+                                value:
+                                    file: "@document.pdf"
+                                    filename: "my-document.pdf"
+                                    expiresIn: 0
+            responses:
+                "201":
+                    description: File uploaded successfully
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/UploadResponse"
+                "400":
+                    $ref: "#/components/responses/BadRequest"
+                "413":
+                    description: File too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    $ref: "#/components/responses/TooManyRequests"
+                "500":
+                    $ref: "#/components/responses/ServerError"
+
+    /files/{id}:
+        get:
+            summary: Get upload by ID
+            description: Retrieve details about a specific upload by its ID
+            tags:
+                - Files
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                      type: string
+                  description: Upload ID
+            responses:
+                "200":
+                    description: Upload details
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                        enum: [success]
+                                    code:
+                                        type: integer
+                                    data:
+                                        type: object
+                                        properties:
+                                            id:
+                                                type: string
+                                            originalName:
+                                                type: string
+                                            customName:
+                                                type: string
+                                            mimeType:
+                                                type: string
+                                            size:
+                                                type: integer
+                                            hasPassword:
+                                                type: boolean
+                                            maxDownloads:
+                                                type: integer
+                                            downloadsCount:
+                                                type: integer
+                                            expiresAt:
+                                                type: string
+                                                format: date-time
+                                            isExpired:
+                                                type: boolean
+                                                description: Expiration status flag
+                                            createdAt:
+                                                type: string
+                                                format: date-time
+                                            updatedAt:
+                                                type: string
+                                                format: date-time
+                "404":
+                    description: Upload not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many requests
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "500":
+                    description: Server error
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+        patch:
+            summary: Update file metadata
+            security:
+                - bearerAuth: []
+            description: |
+                Update file metadata.
+                Requires a JWT token (delete_token) in the Authorization header: Bearer <token>.
+                Available only within 24 hours after upload.
+            tags:
+                - Files
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                      type: string
+                  description: Upload ID
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                filename:
+                                    type: string
+                                    description: New filename
+                                password:
+                                    type: string
+                                    description: New password (or remove if null)
+                                maxDownloads:
+                                    type: integer
+                                    description: New maximum number of downloads
+                                expiresIn:
+                                    type: integer
+                                    minimum: 0
+                                    example: 24
+                                    description: New expiration time in hours (0 to remove restriction)
+                        examples:
+                            setExpiration:
+                                summary: Set expiration time
+                                value:
+                                    expiresIn: 24
+                            removeExpiration:
+                                summary: Remove expiration time
+                                value:
+                                    expiresIn: 0
+            responses:
+                "200":
+                    description: File updated successfully
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                        enum: [success]
+                                    code:
+                                        type: integer
+                                    data:
+                                        type: object
+                                        properties:
+                                            message:
+                                                type: string
+                                            id:
+                                                type: string
+                                            filename:
+                                                type: string
+                                            updated:
+                                                type: boolean
+                "401":
+                    description: Unauthorized, missing or invalid token
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden, 24-hour modification period expired
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Upload not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many requests
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "500":
+                    description: Server error
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+        delete:
+            summary: Delete file
+            security:
+                - bearerAuth: []
+            description: |
+                Delete the file and all its metadata.
+                Requires a JWT token (delete_token) in the Authorization header: Bearer <token>.
+                Available only within 24 hours after upload.
+            tags:
+                - Files
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                      type: string
+                  description: Upload ID
+            responses:
+                "200":
+                    description: File deleted successfully
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                        enum: [success]
+                                    code:
+                                        type: integer
+                                    data:
+                                        type: object
+                                        properties:
+                                            message:
+                                                type: string
+                                            id:
+                                                type: string
+                                            deleted:
+                                                type: boolean
+                "401":
+                    description: Unauthorized, missing or invalid token
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden, 24-hour deletion period expired
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Upload not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many requests
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "500":
+                    description: Server error
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /files/{id}/download:
+        get:
+            summary: Download file
+            description: |
+                Download a file by ID.
+                If the file is password-protected, the password parameter must be provided.
+                Does not require authorization.
+            tags:
+                - Files
+            parameters:
+                - in: path
+                  name: id
+                  required: true
+                  schema:
+                      type: string
+                  description: Upload ID
+                - in: query
+                  name: password
+                  required: false
+                  schema:
+                      type: string
+                  description: Password for protected files
+            responses:
+                "200":
+                    description: File stream
+                    content:
+                        application/octet-stream:
+                            schema:
+                                type: string
+                                format: binary
+                "401":
+                    description: Password required or invalid password
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Download limit exceeded
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: File not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "410":
+                    description: File expired
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many requests
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "500":
+                    description: Server error
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
